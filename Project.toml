@@ -1,0 +1,11 @@
+name = "DFMO"
+uuid = "f328eccf-1513-4b6b-8614-6fb64f4b4657"
+authors = ["Manuel Berkemeier <manuelbb@mail.uni-paderborn.de>"]
+version = "0.1.0"
+
+[deps]
+Formatting = "59287772-0a20-5a39-b81b-1366585eb4c0"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
+Primes = "27ebfcd6-29c5-5fa9-bf4b-fb8fc14df3ae"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
