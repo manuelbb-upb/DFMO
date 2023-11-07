@@ -203,11 +203,12 @@ function pretty_str(
     first_col_width = index_column ? max(1, length(index_letter), ndigits(vec_table.max_vec_len)) : 0
     entries = [denormalize_mantissas(e) for e in vec_table.entries]
     col_widths = zeros(Int, length(entries))
-    
+   
+    s = line_prefix
     if index_column
-        s = lpad(index_letter, first_col_width) * " |"
+        s *= lpad(index_letter, first_col_width) * " |"
     else
-        s = ""
+        s *= ""
     end
     for (j, name) in enumerate(vec_table.names)
         entry = entries[j]
@@ -216,7 +217,7 @@ function pretty_str(
         s *= " " * lpad("$(name)", cw) * " |" 
     end
 
-    s *= "\n"
+    s *= "\n" * line_prefix
 
     if index_column
         s *= lpad("", first_col_width) * " |"
@@ -232,7 +233,7 @@ function pretty_str(
         end
     end
 
-    s *= "\n" * repeat("=", first_col_width + 2 + sum(3 + cw for cw in col_widths)) * "\n"
+    s *= "\n" * line_prefix * repeat("=", first_col_width + 2 + sum(3 + cw for cw in col_widths)) * "\n" * line_prefix
 
     for i=1:vec_table.max_vec_len
         if index_column
@@ -247,7 +248,7 @@ function pretty_str(
             end
         end
         if i != vec_table.max_vec_len
-            s *= "\n"
+            s *= "\n" * line_prefix
         end
     end
     return s
