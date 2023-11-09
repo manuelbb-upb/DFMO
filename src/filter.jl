@@ -1,8 +1,18 @@
 struct Filter
     size :: Int
     flags :: Vector{Bool}
-    tmp_flags :: Vector{Bool}
     index :: Vector{Int}
+    generations :: Vector{Int}
+    parents :: Vector{Int}
+    directions :: Vector{Int}
+end
+
+function copy_filter!(dest, src)
+    dest.flags .= src.flags
+    dest.index .= src.index
+    dest.generations .= src.generations
+    dest.parents .= src.parents
+    dest.directions .= src.directions
 end
 
 function init_filter(cache, max_filter_size)
@@ -12,55 +22,14 @@ function init_filter(cache, max_filter_size)
     filter_size = max(0, min(max_filter_size, cache.max_store))
 
     filter_flags = zeros(Bool, filter_size)
-    tmp_flags = deepcopy(filter_flags)
     filter_index = fill(-1, filter_size)
 
-    return Filter(filter_size, filter_flags, tmp_flags, filter_index)
-end
+    filter_generations = copy(filter_index)
+    filter_parents = copy(filter_index)
+    filter_directions = copy(filter_index)
 
-struct Solutions{S}
-    flags :: Vector{Bool}
-    index :: Vector{Int}
-    spread_vals :: S
-end
-
-function init_solutions(filter, max_num_sols, has_spread, T)
-    num_sols = max(0, min(filter.size, max_num_sols))
-    sols_flags = zeros(Bool, num_sols)
-    sols_index = fill(-1, num_sols)
-    spread_vals = has_spread ? Vector{T}(undef, num_sols) : nothing
-    return Solutions(sols_flags, sols_index, spread_vals)
-end
-
-function set_flag!(solutions, filter_slot_index; force_add=-1, soft_force=true)
-    filter_slot_index < 1 && return filter_slot_index
-    forced_slot_index = min(force_add, length(solutions.flags))
-    solutions_slot_index = soft_force ? -1 : forced_slot_index
-    if solutions_slot_index < 0
-        for (i, is_occupied_sol_slot) = enumerate(solutions.flags)
-            if is_occupied_sol_slot 
-                if solutions.index[i] == filter_slot_index
-                    return i
-                else
-                    continue
-                end
-            end
-            solutions_slot_index = i
-            break
-        end
-    end
-    if solutions_slot_index < 0
-        solutions_slot_index = forced_slot_index
-    end
-    solutions_slot_index < 1 && return solutions_slot_index
-
-    solutions.flags[solutions_slot_index] = true
-    solutions.index[solutions_slot_index] = filter_slot_index
-    svals = solutions.spread_vals
-    if !isnothing(svals) 
-        svals[solutions_slot_index] = NaN
-    end
-    return solutions_slot_index
+    #return Filter(filter_size, filter_flags, tmp_flags, filter_index)
+    return Filter(filter_size, filter_flags, filter_index, filter_generations, filter_parents, filter_directions)
 end
 
 """
@@ -81,8 +50,8 @@ function update_filter!(
 )
     filter_index = filter.index
     filter_flags = filter.flags
-    tmp_flags = filter.tmp_flags
-    tmp_flags .= false
+    #src tmp_flags = filter.tmp_flags
+    #src tmp_flags .= false
 
     fx = @view(cache.fobj[:, cache_index])
 
@@ -106,7 +75,7 @@ function update_filter!(
                 ## if we want to add it anyways, we have to remove the dominating element
                 num_free += 1
                 filter_flags[i] = false
-                tmp_flags[i] = true
+                #src tmp_flags[i] = true
                 if sub_ind < 1
                     sub_ind = i
                 end
@@ -121,7 +90,7 @@ function update_filter!(
         if all(fx .<= φx) && any( fx .< φx )
             ## fx dominates an element that is in the filter, so we have to remove it
             filter_flags[i] = false
-            tmp_flags[i] = true
+            #src tmp_flags[i] = true
             num_free += 1
             if sub_ind < 1
                 sub_ind = i
@@ -142,7 +111,7 @@ function update_filter!(
     if sub_ind > 0
         filter_flags[sub_ind] = true
         filter_index[sub_ind] = cache_index
-        tmp_flags[sub_ind] = true           # TODO probably redundant
+        #src tmp_flags[sub_ind] = true           # TODO probably redundant
         num_free -= 1
     end
     return sub_ind, num_free
@@ -167,35 +136,29 @@ function compute_spread!(svals::AbstractVector, F_vals::AbstractMatrix)
     return sort_ind
 end
 
-@views function compute_spread!(solutions, filter, cache; sort_solutions=true)
-    isnothing(solutions.spread_vals) && return nothing
-
-    F_index = filter.index[solutions.index[solutions.flags]]
-
-    if length(F_index) <= 1
-        solutions.spread_vals[solutions.flags] .= Inf
-        return nothing
-    end
-
-    solutions.spread_vals .= -Inf
-    F_vals = cache.fobj[:, F_index]
-    svals = solutions.spread_vals[solutions.flags]
-    s_ind = compute_spread!(svals, F_vals)
-    if sort_solutions
-        sort_by_spread!(solutions, s_ind)
-    end
+function compute_spread!(svals::Nothing, solutions, filter, cache; sort_solutions=true)
     return nothing
 end
 
-@views function sort_by_spread!(solutions, sort_ind = nothing)
-    isnothing(solutions.spread_vals) && return nothing
-    if isnothing(sort_ind)
-        sort_ind = sortperm(solutions.spread_vals[solutions.flags]; rev=true)
-    else
-        sortperm!(sort_ind, solutions.spread_vals[solutions.flags]; rev=true)
+@views function compute_spread!(svals, solutions, filter, cache; sort_solutions=true)
+    sol_flags = solutions .> 0
+    sols = solutions[sol_flags]
+    F_index = filter.index[sols]
+    if length(F_index) <= 1
+        svals[sol_flags] .= Inf
+        return nothing
     end
-    solutions.index[solutions.flags] .= solutions.index[sort_ind]
-    solutions.spread_vals[solutions.flags] .= solutions.spread_vals[sort_ind]
+
+    svals .= nextfloat(-Inf)
+    
+    F_vals = cache.fobj[:, F_index]
+    _svals = svals[sol_flags]
+    s_ind = compute_spread!(_svals, F_vals)
+    if sort_solutions
+        sortperm!(s_ind, _svals; rev=true)
+        _svals .= _svals[s_ind]
+        sols .= sols[s_ind]
+    end
     return nothing
 end
 
@@ -214,20 +177,4 @@ end
         end
     end
     return point_is_strictly_dominated
-end
-
-function sync!(solutions, filter; set_new_solutions=false)
-    for (si, sol_slot_is_occupied) = enumerate(solutions.flags)
-        !sol_slot_is_occupied && continue
-        fi = solutions.index[si]
-        !filter.tmp_flags[fi] && continue
-        solutions.flags[si] = false
-        filter.tmp_flags[fi] = false
-    end
-    if set_new_solutions
-        for (fi, filter_slot_has_changed) = enumerate(filter.tmp_flags)
-            !filter_slot_has_changed && continue
-            set_flag!(solutions, fi)
-        end
-    end
 end

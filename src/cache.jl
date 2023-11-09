@@ -1,7 +1,17 @@
+const DEFAULT_CACHE_MAX_STORE = 100_000
+function DEFAULT_CACHE_TOLERANCE(T::Type{<:AbstractFloat})
+    return 10^(-round(abs(log10(eps(T)))^0.65)) # 1e-6 if `T==Float64`
+end
+
+Base.@kwdef struct EvalCacheConfig
+    max_store :: Int = DEFAULT_CACHE_MAX_STORE
+    tolerance :: Union{Real, Nothing} = nothing
+end
+
 Base.@kwdef struct EvalCache{T<:AbstractFloat}
     ## These parameters were module parameters in Fortran    
-    max_store :: Int = 100_000
-    tolerance :: T = 10^(-ceil(abs(log10(eps(T)))^0.65)) # 1e-6 for T==Float64
+    max_store :: Int = DEFAULT_CACHE_MAX_STORE
+    tolerance :: T = DEFAULT_CACHE_TOLERANCE(T)
     ncache :: Base.RefValue{Int} = Ref(0)   # cache access counter
 
     ## Actual caching matrices
@@ -10,20 +20,48 @@ Base.@kwdef struct EvalCache{T<:AbstractFloat}
     viol :: Vector{T}
 
     pos_free :: Base.RefValue{Int} = Ref(1)     # next free index in caches
-    cur_dim :: Base.RefValue{Int} = Ref(0)      # maximum index of column holding a result
+    current_position :: Base.RefValue{Int} = Ref(0)      # maximum index of column holding a result
 end
 
 float_type(cache::EvalCache{T}) where{T}=T
 
-function setup_cache(num_vars, num_objfs, num_constrs; 
-    max_store::Int=100_000, T::Type{<:AbstractFloat}=Float64
+Base.convert(::Type{EvalCache{T}}, cache::EvalCache{T}) where T<:AbstractFloat=cache
+function Base.convert(::Type{EvalCache{F}}, cache::EvalCache{T}) where {F<:AbstractFloat, T<:AbstractFloat}
+    return EvalCache(
+        cache.max_store,
+        F(cache.tolerance),
+        copy(cache.ncache),
+        Matrix{F}(cache.x),
+        Matrix{F}(cache.fobj),
+        Vector{F}(cache.viol),
+        copy(cache.pos_free),
+        copy(cache.current_position)
+    )
+end
+
+function init_cache(
+    T, num_vars, num_objfs, old_cache, cache_cfg, 
+    cache_max_store, cache_tolerance
 )
+    if isa(old_cache, EvalCache)
+        if float_type(old_cache) != T
+            @warn "Provided cache has precision different from $(T), converting (and copying!)."
+            return convert(EvalCache{T}, old_cache)
+        else
+            return old_cache
+        end
+    end
+    if isa(cache_cfg, EvalCacheConfig)
+        max_store = max(0, cache_cfg.max_store)
+        tolerance = isnothing(cache_cfg.tolerance) ? DEFAULT_CACHE_TOLERANCE(T) : T(cache_cfg.tolerance)
+    else
+        max_store = max(0, cache_max_store)
+        tolerance = isnothing(cache_tolerance) ? DEFAULT_CACHE_TOLERANCE(T) : T(cache_tolerance)
+    end
     x = Matrix{T}(undef, num_vars, max_store)
     fobj = Matrix{T}(undef, num_objfs, max_store)
     viol = zeros(T, max_store)
-#    fconstr = Matrix{T}(undef, num_constrs, max_store)
-#    return EvalCache(; max_store, x, fobj, fconstr, sz_cache)
-    return EvalCache{T}(; max_store, x, fobj, viol)
+    return EvalCache{T}(; tolerance, max_store, x, fobj, viol)
 end
 
 function find_in_cache(x_query, cache)
@@ -31,7 +69,7 @@ function find_in_cache(x_query, cache)
     cache.ncache[] += 1
     eps = cache.tolerance
     for (j, x_c)=enumerate(eachcol(cache.x))
-        if j > cache.cur_dim[]
+        if j > cache.current_position[]
             break
         end
         if all( abs.( x_query .- x_c ) .<= eps )
@@ -55,8 +93,8 @@ function insert_in_cache!(cache, x, fobj, constr_viol; check_cache=true)
         cache.viol[j] = constr_viol
         j = j < cache.max_store ? j+1 : 1
         cache.pos_free[] = j
-        if cache.cur_dim[] < cache.max_store
-            cache.cur_dim[] += 1
+        if cache.current_position[] < cache.max_store
+            cache.current_position[] += 1
         end
     else
         @warn "`insert_in_cache!`: Point is in cache already, at pos $(new_cache_index)."
@@ -101,7 +139,7 @@ end
 function eval_cache_and_filter!(
     ## modified:
     fx, cx, zx, eps_iq, 
-    cache, filter, solutions,
+    cache, filter, 
     ## not modified:
     x, 
     @nospecialize(Objfs!), @nospecialize(Constrs!);
@@ -117,7 +155,6 @@ function eval_cache_and_filter!(
     
     ## update the filter
     filter_slot_index, filter_num_free = update_filter!(filter, cache, cache_index)
-    sync!(solutions, filter)
 
     return cache_index, filter_slot_index, filter_num_free
 end

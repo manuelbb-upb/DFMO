@@ -45,20 +45,21 @@ function init_working_arrays(x0, num_vars, num_objfs, num_constrs, T)
     return WorkingArrays(num_vars, num_objfs, num_constrs, x, fx, cx, zx, eps_iq)
 end
 
-function main(
-    x0, lb, ub, num_objfs, objfs!, num_constrs=0, constrs! =nothing;
+function optimize(
+    x0, lb, ub, num_objfs, objfs!, num_constrs=0, constrs! = nothing;
     T::Type{<:AbstractFloat}=Float64,
-    direction_cfg::Type{<:AbstractDirectionScheme}=HaltonDirections,
-    max_store::Integer=100_000,
+    direction_cfg::AbstractDirectionSchemeConfig=HaltonConfig(),
+    cache::Union{Nothing, EvalCache}=nothing,
+    cache_cfg::Union{Nothing, EvalCacheConfig}=nothing,
+    cache_max_store::Integer=DEFAULT_CACHE_MAX_STORE,
+    cache_tolerance::Real=DEFAULT_CACHE_TOLERANCE(T),
     max_iter::Integer=1_000,
     max_func_calls :: Integer = 2_000,
     # stepsize_halving :: Bool = true,
-    max_filter_size::Integer=max_store,
+    max_filter_size::Integer=cache_max_store,
     max_num_solutions::Integer=max_filter_size,
     diagonal_presampling::Bool=true,    
     stepsize_stop :: Real = 10^(-round(abs(log10(eps(T)))^0.8)), # 1e-9 for T==Float64
-    eta :: Real = 10^(-ceil(abs(log10(eps(T)))^0.65)), # 1e-6 for T==Float64
-    gamma :: Real = eta,
     coef_delta :: Real = 1,
     sort_by_spread :: Bool = false,
     log_lvl :: Integer = Info.level
@@ -88,11 +89,14 @@ function main(
     @unpack x, fx, cx, zx, eps_iq = arrays
 
     ## caches for values
-    cache = setup_cache(num_vars, num_objfs, num_constrs; max_store, T)
+    cache = init_cache(
+        T, num_vars, num_objfs, cache, cache_cfg, cache_max_store, cache_tolerance)
     cache_index = 0
 
     filter = init_filter(cache, max_filter_size)
-    solutions = init_solutions(filter, max_num_solutions, sort_by_spread, T)
+    #solutions = init_solutions(filter, max_num_solutions, sort_by_spread, T)
+    solutions = fill(-1, max_num_solutions)
+    previous_solutions = fill(-1, max_num_solutions)
 
     dir_scheme = init_direction_scheme(direction_cfg, x, zx, lb, ub, solutions, filter)
 
@@ -101,10 +105,9 @@ function main(
     ## then use `cx` to compute penalizing factors 
     ## put everything in cache
     cache_index, filter_slot_index, filter_num_free = eval_cache_and_filter!(
-        fx, cx, zx, eps_iq, cache, filter, solutions, x, Objfs!, Constrs!;
+        fx, cx, zx, eps_iq, cache, filter, x, Objfs!, Constrs!;
         initialize_eps_iq=true, check_cache=false, max_func_calls
     )
-    set_flag!(solutions, filter_slot_index)
     if cache_index < 0 
         it_code = STOP_MAX_FUNC_CALLS
     end
@@ -112,14 +115,13 @@ function main(
     if diagonal_presampling
         box_width = ub .- lb
         i = 1
-        while it_code == CONTINUE_ITERATION && i < num_vars
+        while it_code == CONTINUE_ITERATION && i <= num_vars
             x .= lb .+ ((i-1)/(num_vars -1)) .* box_width
             
             cache_index, filter_slot_index, filter_num_free = eval_cache_and_filter!(
-                fx, cx, zx, eps_iq, cache, filter, solutions, x, Objfs!, Constrs!;
+                fx, cx, zx, eps_iq, cache, filter, x, Objfs!, Constrs!;
                 initialize_eps_iq=false, check_cache=true, max_func_calls
             )
-            set_flag!(solutions, filter_slot_index)
             if cache_index < 0 
                 it_code = STOP_MAX_FUNC_CALLS
             end
@@ -127,6 +129,7 @@ function main(
             i += 1
         end
     end
+    spread_vals = sort_by_spread ? Vector{T}(undef, length(solutions)) : nothing
 
     for it_index=1:max_iter
         it_code != CONTINUE_ITERATION && break
@@ -135,7 +138,6 @@ function main(
         #################################################
         # Iteration $(it_index) (of max $(max_iter)).
         #################################################"""
-        compute_spread!(solutions, filter, cache)
 
         #=
         The following condition from the Fortran code tells us when to inspect a cached element:
@@ -159,13 +161,13 @@ function main(
         =#
 
         it_code = propagate_solutions!(
-            dir_scheme, arrays, cache, solutions, filter, 
-            Objfs!, Constrs!, 
-            lb, ub, log_level, stepsize_stop, max_func_calls, gamma)
+            dir_scheme, arrays, cache, solutions, previous_solutions, filter, 
+            Objfs!, Constrs!, spread_vals,
+            lb, ub, log_level, stepsize_stop, max_func_calls, it_index)
     end# for it_index=1:max_iter
     it_code = it_code == CONTINUE_ITERATION ? STOP_MAX_ITER : it_code
 
-    return it_code, cache, filter, solutions
+    return it_code, cache, filter, solutions, dir_scheme
 end#function main
 
 end#module

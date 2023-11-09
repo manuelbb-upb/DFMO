@@ -182,7 +182,7 @@ Base.@kwdef struct EvalCache{T<:AbstractFloat}
     fconstr :: Matrix{T}
 
     pos_free :: Base.RefValue{Int} = Ref(1)     # next free index in caches
-    cur_dim :: Base.RefValue{Int} = Ref(0)      # maximum index of column holding a result
+    current_position :: Base.RefValue{Int} = Ref(0)      # maximum index of column holding a result
 end
 
 function setup_cache(num_vars, num_objfs, num_constrs; max_store::Int=100_000, T::Type{<:AbstractFloat}=Float64)
@@ -222,8 +222,8 @@ function insert_in_cache!(cache, x, fobj, fconstr; check_cache=true)
         cache.fconstr[:, j] .= fconstr
         j = j < cache.max_store ? j+1 : 1
         cache.pos_free[] = j
-        if cache.cur_dim[] < cache.max_store
-            cache.cur_dim[] += 1
+        if cache.current_position[] < cache.max_store
+            cache.current_position[] += 1
         end
     else
         @warn "`insert_in_cache!`: Point is in cache already."
