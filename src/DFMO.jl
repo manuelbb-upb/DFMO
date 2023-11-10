@@ -48,7 +48,7 @@ end
 function optimize(
     x0, lb, ub, num_objfs, objfs!, num_constrs=0, constrs! = nothing;
     T::Type{<:AbstractFloat}=Float64,
-    direction_cfg::AbstractDirectionSchemeConfig=HaltonConfig(),
+    direction_cfg::AbstractDirectionSchemeConfig=HaltonDriveToZeroConfig(),
     cache::Union{Nothing, EvalCache}=nothing,
     cache_cfg::Union{Nothing, EvalCacheConfig}=nothing,
     cache_max_store::Integer=DEFAULT_CACHE_MAX_STORE,
@@ -94,11 +94,8 @@ function optimize(
     cache_index = 0
 
     filter = init_filter(cache, max_filter_size)
-    #solutions = init_solutions(filter, max_num_solutions, sort_by_spread, T)
-    solutions = fill(-1, max_num_solutions)
-    previous_solutions = fill(-1, max_num_solutions)
 
-    dir_scheme = init_direction_scheme(direction_cfg, x, zx, lb, ub, solutions, filter)
+    dir_scheme = init_direction_scheme(direction_cfg, x, zx, lb, ub, filter)
 
     it_code = CONTINUE_ITERATION
     ## evaluate objectives and constraints
@@ -129,7 +126,6 @@ function optimize(
             i += 1
         end
     end
-    spread_vals = sort_by_spread ? Vector{T}(undef, length(solutions)) : nothing
 
     for it_index=1:max_iter
         it_code != CONTINUE_ITERATION && break
@@ -161,13 +157,13 @@ function optimize(
         =#
 
         it_code = propagate_solutions!(
-            dir_scheme, arrays, cache, solutions, previous_solutions, filter, 
-            Objfs!, Constrs!, spread_vals,
+            dir_scheme, arrays, cache, filter, 
+            Objfs!, Constrs!,
             lb, ub, log_level, stepsize_stop, max_func_calls, it_index)
     end# for it_index=1:max_iter
     it_code = it_code == CONTINUE_ITERATION ? STOP_MAX_ITER : it_code
 
-    return it_code, cache, filter, solutions, dir_scheme
+    return it_code, cache, filter, dir_scheme
 end#function main
 
 end#module
