@@ -66,8 +66,9 @@ end
 
 function find_in_cache(x_query, cache)
     x_query_index = 0
-    cache.ncache[] += 1
     eps = cache.tolerance
+    eps < 0 && return x_query_index
+    cache.ncache[] += 1
     for (j, x_c)=enumerate(eachcol(cache.x))
         if j > cache.current_position[]
             break
@@ -126,7 +127,7 @@ function eval_and_cache!(
     Constrs!(cx, x)
     if initialize_eps_iq
         for i=axes(eps_iq, 1)
-            eps_iq[i, :] = max(0, cx[i]) < 1 ? 1e-3 : 1e-1
+            eps_iq[i, :] .= max(0, cx[i]) < 1 ? 1e-3 : 1e-1
         end
     end
     viol = penalize!(zx, fx, cx, eps_iq)

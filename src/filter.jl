@@ -5,6 +5,7 @@ struct Filter
     generations :: Vector{Int}
     parents :: Vector{Int}
     directions :: Vector{Int}
+    mod_hash :: Base.RefValue{UInt64}
 end
 
 function copy_filter!(dest, src)
@@ -13,6 +14,7 @@ function copy_filter!(dest, src)
     dest.generations .= src.generations
     dest.parents .= src.parents
     dest.directions .= src.directions
+    dest.mod_hash[] = src.mod_hash[]
 end
 
 function init_filter(cache, max_filter_size)
@@ -28,8 +30,15 @@ function init_filter(cache, max_filter_size)
     filter_parents = copy(filter_index)
     filter_directions = copy(filter_index)
 
+    mod_hash = Ref(hash(rand()))
     #return Filter(filter_size, filter_flags, tmp_flags, filter_index)
-    return Filter(filter_size, filter_flags, filter_index, filter_generations, filter_parents, filter_directions)
+    return Filter(filter_size, filter_flags, filter_index, filter_generations, filter_parents, filter_directions, mod_hash)
+end
+
+function set_filter_flag!(filter, i, val=true)
+    filter.flags[i] = val
+    filter.mod_hash[] = hash(i, hash(val, filter.mod_hash[]))
+    return nothing
 end
 
 """
@@ -50,8 +59,6 @@ function update_filter!(
 )
     filter_index = filter.index
     filter_flags = filter.flags
-    #src tmp_flags = filter.tmp_flags
-    #src tmp_flags .= false
 
     fx = @view(cache.fobj[:, cache_index])
 
@@ -74,8 +81,7 @@ function update_filter!(
             if force_add > 0
                 ## if we want to add it anyways, we have to remove the dominating element
                 num_free += 1
-                filter_flags[i] = false
-                #src tmp_flags[i] = true
+                set_filter_flag!(filter, i, false)
                 if sub_ind < 1
                     sub_ind = i
                 end
@@ -89,8 +95,7 @@ function update_filter!(
 
         if all(fx .<= φx) && any( fx .< φx )
             ## fx dominates an element that is in the filter, so we have to remove it
-            filter_flags[i] = false
-            #src tmp_flags[i] = true
+            set_filter_flag!(filter, i, false)
             num_free += 1
             if sub_ind < 1
                 sub_ind = i
@@ -109,7 +114,7 @@ function update_filter!(
         end
     end
     if sub_ind > 0
-        filter_flags[sub_ind] = true
+        set_filter_flag!(filter, sub_ind, true)
         filter_index[sub_ind] = cache_index
         #src tmp_flags[sub_ind] = true           # TODO probably redundant
         num_free -= 1
@@ -136,30 +141,24 @@ function compute_spread!(svals::AbstractVector, F_vals::AbstractMatrix)
     return sort_ind
 end
 
-function compute_spread!(svals::Nothing, solutions, filter, cache; sort_solutions=true)
-    return nothing
-end
-
-@views function compute_spread!(svals, solutions, filter, cache; sort_solutions=true)
-    sol_flags = solutions .> 0
-    sols = solutions[sol_flags]
-    F_index = filter.index[sols]
+@views function compute_spread!(svals, filter, cache; sort_solutions=true)
+    F_index = filter.index[filter.flags]
     if length(F_index) <= 1
-        svals[sol_flags] .= Inf
-        return nothing
+        svals[filter.flags] .= Inf
+        return [1,]
     end
 
     svals .= nextfloat(-Inf)
     
     F_vals = cache.fobj[:, F_index]
-    _svals = svals[sol_flags]
+    _svals = svals[filter.flags]
     s_ind = compute_spread!(_svals, F_vals)
     if sort_solutions
         sortperm!(s_ind, _svals; rev=true)
         _svals .= _svals[s_ind]
-        sols .= sols[s_ind]
+        F_index .= F_index[s_ind]
     end
-    return nothing
+    return s_ind
 end
 
 @views function filter_strictly_dominates_point_at_index(

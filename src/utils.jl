@@ -32,3 +32,29 @@ function project_into_box!(x, lb, ub)
         x[i] = max(lb[i], min(ub[i], x[i]))
     end
 end
+
+get_x(cache)=cache.x[:, 1:cache.current_position[]]
+get_fobj(cache)=cache.fobj[:, 1:cache.current_position[]]
+get_viol(cache)=cache.viol[1:cache.current_position[]]
+
+function get_x(cache::EvalCache, filter::Filter)
+    return get_x(cache)[:, filter.index[filter.flags]]
+end
+function get_fobj(cache::EvalCache, filter::Filter)
+    return get_fobj(cache)[:, filter.index[filter.flags]]
+end
+function get_viol(cache::EvalCache, filter::Filter)
+    return get_viol(cache)[filter.index[filter.flags]]
+end
+
+function get_x(cache::EvalCache, filter::Filter, solutions)
+    return get_x(cache)[:, filter.index[solutions]]
+end
+function get_fobj(cache::EvalCache, filter::Filter, solutions)
+    return get_fobj(cache)[:, filter.index[solutions]]
+end
+function get_viol(cache::EvalCache, filter::Filter, solutions)
+    return get_viol(cache)[filter.index[solutions]]
+end
+
+export get_x, get_fobj, get_viol

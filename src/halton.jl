@@ -20,26 +20,31 @@ function propagate_solutions!(
     return error("`propagate_solutions!` not implemented for $(DS).")
 end
 
-function query_solutions_filter_index(::AbstractDirectionScheme, filter)
-    return Int[]
-end
-
-function query_solutions_cache_index(ds::AbstractDirectionScheme, filter)
-    return filter.index[query_solutions_filter_index(ds, filter)]
-end
-
-Base.@kwdef struct HaltonDriveToZeroConfig <: AbstractDirectionSchemeConfig
+abstract type AbstractHaltonStrategy end
+Base.@kwdef struct FollowChildSolutions <: AbstractHaltonStrategy
     max_num_sols :: Int = 1
-    max_dirs_per_it :: Union{Int, Nothing} = 1
+    prefer_small_stepsizes :: Bool = true
+end
+
+Base.@kwdef struct OriginalFiltering{T<:AbstractFloat} <: AbstractHaltonStrategy
+    coef_delta_ref :: Base.RefValue{T} = Ref(1.0)
+    spread_vals :: Vector{T} = T[]
+    spread_hash :: Base.RefValue{UInt64} = Ref(zero(UInt64))
+    min_coef_delta :: T = 10^(round(log10(eps(Float64))))
+end
+
+Base.@kwdef struct HaltonConfig{S<:AbstractHaltonStrategy} <: AbstractDirectionSchemeConfig
+    max_dirs_per_it :: Union{Int, Nothing} = nothing
     tol_sgn_switch :: Union{Real, Nothing} = nothing
     gamma :: Union{Real, Nothing} = nothing
     do_subiterations :: Bool = false
-    stepsize_halving :: Bool = false
+    stepsize_halving :: Bool = true
+    exploration :: Bool = false
+    solution_selection_strategy :: S = FollowChildSolutions()
 end
 
-struct HaltonDriveToZero{T<:AbstractFloat} <: AbstractDirectionScheme
+struct Halton{T<:AbstractFloat, S} <: AbstractDirectionScheme
     num_vars :: Int
-    max_num_sols :: Int
     
     sz_init :: T
     sz_vals :: Vector{T}
@@ -58,21 +63,33 @@ struct HaltonDriveToZero{T<:AbstractFloat} <: AbstractDirectionScheme
     gamma :: T
 
     do_subiterations :: Bool
-    stepsize_halving :: Bool 
+    stepsize_halving :: Bool
+    exploration :: Bool 
+    solution_selection_strategy :: S
 
     next_filter :: Filter
 
     solutions_flags :: Vector{Bool}
+    tmp_solutions_flags :: Vector{Bool}
     solutions_choice_index :: Base.RefValue{Int}
 end
 
+function get_x(cache::EvalCache, filter::Filter, hd::Halton)
+    return get_x(cache, filter, hd.solutions_flags)
+end
+function get_fobj(cache::EvalCache, filter::Filter, hd::Halton)
+    return get_fobj(cache, filter, hd.solutions_flags)
+end
+function get_viol(cache::EvalCache, filter::Filter, hd::Halton)
+    return get_viol(cache, filter, hd.solutions_flags)
+end
+
 function init_direction_scheme(
-    cfg::HaltonDriveToZeroConfig, x, zx, lb, ub, filter
+    cfg::HaltonConfig, x, zx, lb, ub, filter
 )
     T = eltype(x)
     num_vars = length(x)
-    max_num_sols = cfg.max_num_sols
-    max_dirs_per_it = isnothing(cfg.max_num_sols) ? num_vars : min(max(1, cfg.max_dirs_per_it), num_vars)
+    max_dirs_per_it = isnothing(cfg.max_dirs_per_it) ? num_vars : min(max(1, cfg.max_dirs_per_it), num_vars)
 
     seed = 1_000 + 2 * num_vars
     d0 = halton(num_vars, seed, T)
@@ -105,28 +122,165 @@ function init_direction_scheme(
 
     next_filter = deepcopy(filter)
     solutions_flags = zeros(Bool, filter.size)
+    tmp_solutions_flags = deepcopy(solutions_flags)
     solutions_choice_index = Ref(-1)
-    return HaltonDriveToZero{T}(
-        num_vars, max_num_sols,
+    return Halton{T, typeof(cfg.solution_selection_strategy)}(
+        num_vars,
         sz_init, sz_vals,
         Ref(seed), orth_dirs, 
         x_trial, x_beta, zx_trial, zx_beta, step_trial, step_beta,
         tol_sgn_switch, gamma,
-        cfg.do_subiterations, cfg.stepsize_halving,
-        next_filter, solutions_flags, solutions_choice_index
+        cfg.do_subiterations, cfg.stepsize_halving, cfg.exploration, 
+        cfg.solution_selection_strategy,
+        next_filter, solutions_flags, tmp_solutions_flags, solutions_choice_index
     )
 end#init_direction_scheme
 
-function choose_minimal_solutions!(solutions_flags, sz_vals, filter, max_num_sols)
-    solutions_flags .= false
-    filter_sort_index = sortperm(sz_vals[filter.flags])
-    num_sols = min(max_num_sols, length(filter_sort_index))
-    @views solutions_flags[filter.flags][filter_sort_index[1:num_sols]] .= true
-    return nothing
+function choose_child_solutions!(
+    strategy::OriginalFiltering,
+    next_solutions_flags, last_solutions_flags, sz_vals, filter, last_filter, 
+    cache, stepsize_stop, it_index, log_level)
+
+    @logmsg log_level "##### SOLUTION SELECTION #####"
+    next_solutions_flags .= false
+
+    alpha_max = maximum(sz_vals[filter.flags]; init=0)
+    if alpha_max <= stepsize_stop 
+        return STOP_MIN_STEPSIZE
+    end
+    alpha_max /= 10
+
+    @unpack spread_vals, coef_delta_ref = strategy
+    if isempty(spread_vals)
+        append!(spread_vals, fill(NaN, filter.size))
+    end
+
+    if strategy.spread_hash[] != filter.mod_hash[]
+        @logmsg log_level " recomputing SPREAD VALUES"
+        sz_index = compute_spread!(spread_vals, filter, cache)
+        #src sz_vals[filter.flags] .= sz_vals[filter.flags][sz_index]
+        strategy.spread_hash[] = filter.mod_hash[]
+    end
+    
+    coef_delta = coef_delta_ref[]
+    _i = 0
+    num_considered = 0
+    num_log_msgs = 0
+    for (i, i_is_filter_position) = enumerate(filter.flags)
+        !i_is_filter_position && continue
+        alpha = sz_vals[i]
+        if alpha <= stepsize_stop 
+            if num_log_msgs <= 10
+                @logmsg log_level "  Filter element $(i) has too small a stepsize ($(alpha))."
+                num_log_msgs += 1
+            end
+            continue
+        end
+        
+        if spread_vals[i] <= coef_delta 
+            if num_log_msgs <= 10
+                @logmsg log_level "  Filter element $(i) has too small a spread ($(spread_vals[i]) vs $(coef_delta))."
+                num_log_msgs += 1
+            end
+            continue
+        end
+
+        _i += 1
+        if _i > size(cache.fobj, 1) && alpha <= alpha_max 
+            if num_log_msgs <= 10
+                @logmsg log_level "  Filter element $(i) has too small a relative stepsize ($(alpha) vs $(alpha_max))."
+                num_log_msgs += 1
+            end
+            continue
+        end
+
+        num_considered += 1
+        next_solutions_flags[i] = true
+        @logmsg log_level "  Choosing filter element $(i) with spread $(spread_vals[i]) for next iteration!"
+    end
+
+    if num_considered == 0
+        coef_delta_ref[] = coef_delta * 0.95
+        if coef_delta_ref[] < strategy.min_coef_delta
+            return STOP_SMALL_SPREAD_VALUES
+        end
+    end
+    return CONTINUE_ITERATION
+end
+
+function choose_child_solutions!(
+    strategy::FollowChildSolutions,
+    next_solutions_flags, last_solutions_flags, sz_vals, filter, last_filter,
+    cache, stepsize_stop, it_index, log_level)
+    
+    @logmsg log_level "##### SOLUTION SELECTION #####"
+    next_solutions_flags .= false
+    num_sols = 0
+    @unpack max_num_sols = strategy
+    
+    if it_index == 1
+        for (fi, fi_slot_occupied) = enumerate(filter.flags)
+            !fi_slot_occupied && continue
+            sz_vals[fi] <= stepsize_stop && continue
+            num_sols == max_num_sols && break
+            num_sols += 1
+            next_solutions_flags[fi]=true
+        end
+    else
+        found_more_candidates = true
+        last_gen = it_index - 1
+        while num_sols < max_num_sols && found_more_candidates
+            _num_sols = num_sols
+            for (pfi, pfi_was_solution) = enumerate(last_solutions_flags)
+                num_sols >= max_num_sols && break
+                !pfi_was_solution && continue
+
+                if filter.flags[pfi] && filter.index[pfi] == last_filter.index[pfi]
+                    if !next_solutions_flags[pfi] && sz_vals[pfi] > stepsize_stop
+                        num_sols += 1
+                        next_solutions_flags[pfi] = true
+                        @logmsg log_level "\tSOLUTION SELECTION [$(num_sols)]: Previous solution is still in filter."
+                    
+                        continue
+                    end
+                end
+
+                si = -1
+                si_sz = strategy.prefer_small_stepsizes ? Inf : -Inf
+                for (fi, fi_slot_occupied) = enumerate(filter.flags)
+                    !fi_slot_occupied && continue
+                    filter.parents[fi] != pfi && continue
+                    filter.generations[fi] != last_gen && continue
+                    next_solutions_flags[fi] && continue
+                    fi_sz = sz_vals[fi]
+                    fi_sz <= stepsize_stop && continue
+                    if (
+                        (strategy.prefer_small_stepsizes && fi_sz < si_sz) ||
+                        (!strategy.prefer_small_stepsizes && fi_sz > si_sz)
+                    )
+                        si_sz = fi_sz
+                        si = fi
+                    end
+                end
+                if si > 0
+                    num_sols += 1
+                    next_solutions_flags[si] = true                
+                    @logmsg log_level "\tSOLUTION SELECTION [$(num_sols)]: Previous solution $(pfi) has filter descendant $(si)."
+                end
+            end
+            found_more_candidates = (num_sols != _num_sols)
+        end
+    end
+    @logmsg log_level "\tSOLUTION SELECTION: Chose $(num_sols) elements in filter."
+    if num_sols == 0
+        return STOP_MIN_STEPSIZE
+    else
+        return CONTINUE_ITERATION
+    end
 end
 
 function propagate_solutions!(
-    hd::HaltonDriveToZero, 
+    hd::Halton, 
     arrays, cache, filter, 
     Objfs!, Constrs!,
     lb, ub, log_level, stepsize_stop, max_func_calls, it_index
@@ -134,28 +288,31 @@ function propagate_solutions!(
     @unpack x, cx, fx, zx, eps_iq, num_vars, num_objfs = arrays
     @unpack x_trial, x_beta, zx_trial, zx_beta, step_trial, step_beta, sz_vals,
         tol_sgn_switch, gamma, next_filter, solutions_flags, solutions_choice_index, 
-        stepsize_halving, max_num_sols = hd
+        tmp_solutions_flags, stepsize_halving = hd
 
     @logmsg log_level "#### PROPAGATION"
 
+    copy_filter!(next_filter, filter)
+    
     if solutions_choice_index[] != it_index - 1
         ## select those element from the filter that have the smallest stepsize associated with them
-        choose_minimal_solutions!(solutions_flags, sz_vals, filter, max_num_sols)
+        #src choose_minimal_solutions!(solutions_flags, sz_vals, filter, max_num_sols)
+        choose_child_solutions!(
+            hd.solution_selection_strategy, solutions_flags, tmp_solutions_flags, sz_vals, 
+            next_filter, filter, cache, stepsize_stop, it_index, log_level)
         solutions_choice_index[] = it_index - 1
     end
+    tmp_solutions_flags .= solutions_flags
     
-    copy_filter!(next_filter, filter)
     it_code = CONTINUE_ITERATION
    
     for (si, si_is_solution_index) = enumerate(solutions_flags)
         !si_is_solution_index && continue
         @assert filter.flags[si]
         alpha_start = sz_vals[si]
-        @logmsg log_level "  Considering $(si) with α=$(alpha_start)."
-        if alpha_start < stepsize_stop
-            @logmsg log_level "\tStepsize is $(alpha_start) <= $(stepsize_stop), SKIPPING."
-            continue
-        end
+        
+        ci = filter.index[si]
+        @logmsg log_level "  Considering $(si) ($(ci)) with α=$(alpha_start)."
 
         alpha_fail = alpha_start/2
         si_filter_slot_overwritten = false
@@ -167,14 +324,15 @@ function propagate_solutions!(
         ci_x = filter.index[si_x]
         x .= cache.x[:, ci_x]
         zx .= cache.fobj[:, ci_x]
-        @logmsg log_level "\tVectors are\n$(CustomPrinting.pretty_str(CustomPrinting.VectorTable("x"=>x, "zx" => zx); line_prefix="\t\t"))"
+        @logmsg log_level "\tConstraint Violation is $(cache.viol[ci_x]) and vectors are\n$(CustomPrinting.pretty_str(CustomPrinting.VectorTable("x"=>x, "zx" => zx); line_prefix="\t\t"))"
  
         for (dir_index, d) = enumerate(eachcol(hd.orth_dirs))
-            (success_step && !hd.do_subiterations) && break
-
-            if dir_success
+            (success_step && !hd.do_subiterations && !hd.exploration) && break
+            
+            if dir_success && hd.do_subiterations
                 si_x = si_trial
-                ci_x = filter.index[si_x]
+                @logmsg log_level "\t (do_subiterations) Changing base to $(si_x)."
+                ci_x = next_filter.index[si_x]
                 x .= cache.x[:, ci_x]
                 zx .= cache.fobj[:, ci_x]
             end
@@ -183,12 +341,14 @@ function propagate_solutions!(
             alpha = alpha_start
             for sgn in (1, -1)
                 dir_success && break
-
+                @logmsg log_level "\t  Testing direction $(dir_index) with α=$(sgn*alpha)."
+                
                 @. x_trial = x + sgn * alpha * d
                 project_into_box!(x_trial, lb, ub)
                 @. step_trial = x_trial - x
                 
                 if LA.norm(step_trial) < tol_sgn_switch
+                    @logmsg log_level "\t\tInitial step to small."
                     continue
                 end
 
@@ -206,12 +366,8 @@ function propagate_solutions!(
                     cache, next_filter.index, next_filter.flags, 
                     ci_trial, offset_alpha
                 )
-                if trial_point_is_dominated && sgn < 0
+                if trial_point_is_dominated 
                     @logmsg log_level @sprintf("\t\tci=%d is dominated by the filter with offset %.2e.", ci_trial, offset_alpha)
-                    if !si_filter_slot_overwritten && sz_vals[si] != alpha_fail
-                        @logmsg log_level @sprintf("\t\tReducing α[%d] from %.2e to %.2e.", si, alpha_start, alpha_fail)
-                        sz_vals[si] = alpha_fail
-                    end
                     continue
                 else
                     ## do line-search
@@ -231,23 +387,19 @@ function propagate_solutions!(
                             fx, cx, zx_beta, eps_iq, cache, x_beta, Objfs!, Constrs!;
                             initialize_eps_iq=false, check_cache=true, max_func_calls
                         )
-                        if ci_beta < 1
-                            it_code = STOP_MAX_FUNC_CALLS
-                            break#while true
-                        end
-
                         offset_beta = gamma * beta^2
                         offset_beta_alpha = offset_beta - gamma * alpha^2
                         
-                        if any(zx_beta[ℓ] >= zx_trial[ℓ] - offset_beta_alpha for ℓ=eachindex(zx_beta))
+                        if ci_beta < 1 || any(zx_beta[ℓ] >= zx_trial[ℓ] - offset_beta_alpha for ℓ=eachindex(zx_beta))
                             ## add_point x_trial to filter
                             si_trial, num_filter_free = update_filter!(next_filter, cache, ci_trial; force_add=si_x)
-                            if si_trial == si
+                            if si_trial == si && next_filter.index[si_trial] != ci
                                 si_filter_slot_overwritten = true
                             end
                             ## set stepsize for next (sub)iteration
                             sz_vals[si_trial] = alpha
-                            ## set metadata (not necessary for HaltonDriveToZero)
+                            
+                            ## set metadata (not necessary for Halton)
                             next_filter.directions[si_trial]=dir_index
                             next_filter.generations[si_trial]=it_index
                             next_filter.parents[si_trial]=si
@@ -255,6 +407,11 @@ function propagate_solutions!(
                             @logmsg log_level "\t\t* Added (filter, cache) $((si_trial, ci_trial)), α=$(sgn*alpha)."
                             dir_success = success_step = true
                         end
+                        if ci_beta < 1
+                            it_code = STOP_MAX_FUNC_CALLS
+                            break#while true
+                        end
+
                         if filter_strictly_dominates_point_at_index(
                             cache, next_filter.index, next_filter.flags, 
                             ci_beta, offset_beta
@@ -271,23 +428,38 @@ function propagate_solutions!(
                 it_code != CONTINUE_ITERATION && break
             end#for sgn in (1, -1)
             it_code != CONTINUE_ITERATION && break
+            if !dir_success && !si_filter_slot_overwritten
+                if sz_vals[si] != alpha_fail
+                    @logmsg log_level @sprintf("\t(failure step) Reducing α[%d] from %.2e to %.2e.", si, alpha_start, alpha_fail)
+                    sz_vals[si] = alpha_fail
+                end
+            end
         end#for (dir_index, dir) = enumerate ...
         it_code != CONTINUE_ITERATION && break
-        if stepsize_halving &&!si_filter_slot_overwritten
-            alpha_start = sz_vals[si]
+
+        if stepsize_halving && !si_filter_slot_overwritten
+            alpha_start = min(sz_vals[si], alpha_start)
             alpha_fail = alpha_start / 2
             @logmsg log_level @sprintf("\t(stepsize_halving) Reducing α[%d] from %.2e to %.2e.", si, alpha_start, alpha_fail)
             sz_vals[si] = alpha_fail
         end
     end#for si....
-    copy_filter!(filter, next_filter)
-    choose_minimal_solutions!(solutions_flags, sz_vals, filter, max_num_sols)
+    
+    #src choose_minimal_solutions!(solutions_flags, sz_vals, filter, max_num_sols)
+    _it_code = choose_child_solutions!(
+        hd.solution_selection_strategy, tmp_solutions_flags, solutions_flags, sz_vals, 
+        next_filter, filter, cache, stepsize_stop, it_index+1, log_level)
+    solutions_flags .= tmp_solutions_flags
     solutions_choice_index[] = it_index
+    
+    copy_filter!(filter, next_filter)   # after (!!!) `choose_child_solutions`
+
     prepare_next_halton_directions!(hd; log_level)
+    it_code = it_code != CONTINUE_ITERATION ? it_code : _it_code
     return it_code
 end
 
-function prepare_next_halton_directions!(hd::HaltonDriveToZero{T}; log_level) where T
+function prepare_next_halton_directions!(hd::Halton{T}; log_level) where T
     seed = hd.seed[] += 2*hd.num_vars
     @logmsg log_level "\tComputing halton direction for halton index $(seed)."
     d0 = halton(hd.num_vars, seed, T)
