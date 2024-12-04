@@ -1,4 +1,4 @@
-program main_multiobj
+subroutine opt_multiobj()
 
 	use eps_mod
 	use filtro
@@ -288,4 +288,8 @@ program main_multiobj
         deallocate(ciq_m)
       endif
 
+end subroutine opt_multiobj
+
+program main_multiobj
+	call opt_multiobj()
 end program main_multiobj
