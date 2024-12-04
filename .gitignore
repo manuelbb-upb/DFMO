@@ -1,1 +1,5 @@
 local_user_data/
+multiobj
+*.mod
+*.o
+*.so
