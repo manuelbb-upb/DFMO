@@ -1,6 +1,5 @@
 program main_multiobj
     use, intrinsic :: iso_c_binding
-	use main_mod
 	implicit none
 
 	real*8 		:: alfa_stop

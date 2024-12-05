@@ -20,6 +20,7 @@
 !    nonsmooth optimization, submitted for pubblication on SIAM J. on Optimization 
 !============================================================================================
 subroutine sd_box(n,q,bl,bu,alfa_stop,nf_max,nf,iprint,hschoice,dir_dense,dir_coord,istop)
+	use problem_mod
 	use vincoli
 	use cache
 	use filtro
@@ -594,10 +595,12 @@ end subroutine stopp
 subroutine linesearchbox_cont(n,q,x,f,d,alfa,alfa_d,alfa_dense,z,fz,i_corr,&
                          alfa_max,iprint,bl,bu,nf,pn, ifront)
       
-	  use vincoli
-	  use filtro
-	  use cache
-      implicit none
+	
+	use problem_mod
+	use vincoli
+	use filtro
+	use cache
+    implicit none
 
 	real*8	:: ciq(m)
 
@@ -753,10 +756,12 @@ end subroutine linesearchbox_cont
 
 subroutine linesearchbox_dense(n,q,x,f,d,alfa,alfa_dense,alfac,z,fz,&
                                  alfa_max,iprint,bl,bu,nf, pn)
-	  use vincoli
-	  use filtro
-	  use cache
-      implicit none
+	  
+	use problem_mod
+	use vincoli
+	use filtro
+	use cache
+    implicit none
 
 !---------------------------------------------------------------------      
 ! QUESTA SUBROUTINE IMPLEMENTA: PROJECTED STRONG-EXPANSION

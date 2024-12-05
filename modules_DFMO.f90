@@ -132,7 +132,6 @@ module cache
 end module cache
 
 module filtro
-	use problem_mod
 	integer, parameter :: ndim = 100000
 	!----------------------------------------------------------------
 	! il filtro e' un array la cui generica riga di dimensione n+q+n+2
@@ -315,6 +314,7 @@ module filtro
 	end subroutine mergesets
 
 	subroutine print_filter(n,q)
+		use problem_mod
 		use vincoli
 		implicit none
 		integer n,q,i,j

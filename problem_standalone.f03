@@ -4,6 +4,7 @@ module problem_mod
 
     procedure(setdim_abstract), pointer :: setdim
     procedure(startp_abstract), pointer :: startp
+    procedure(setbounds_abstract), pointer :: setbounds
     procedure(functs_abstract), pointer :: functs
     procedure(fconstriq_abstract), pointer :: fconstriq
 
@@ -77,6 +78,15 @@ module problem_mod
             type(c_funptr), value :: ptr_to_be_wrapped
 
             call c_f_procpointer(ptr_to_be_wrapped, startp)
+        end subroutine
+
+        subroutine set_setbounds_ptr(ptr_to_be_wrapped) bind(C, name="set_setbounds_ptr")
+            use, intrinsic :: iso_c_binding
+            implicit none
+            
+            type(c_funptr), value :: ptr_to_be_wrapped
+
+            call c_f_procpointer(ptr_to_be_wrapped, setbounds)
         end subroutine
 
         subroutine set_functs_ptr(ptr_to_be_wrapped) bind(C, name="set_functs_ptr")
