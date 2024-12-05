@@ -6,7 +6,7 @@ FFLAGS_SHARED = $(FFLAGS) -fPIC
 
 EXE = multiobj
 EXE_SHARED = $(EXE).so
-OBJS_COMMON = modules_DFMO.o main.o DFMO.o subroutines_DFMO.o halton.o sobol.o qsortd.o
+OBJS_COMMON = modules_DFMO.o main_mod.o main.o DFMO.o subroutines_DFMO.o halton.o sobol.o qsortd.o
 OBJS = problem_shim.o $(OBJS_COMMON)
 OBJS_SHARED = $(OBJS_COMMON)
 
