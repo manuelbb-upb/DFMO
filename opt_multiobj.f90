@@ -73,6 +73,8 @@ subroutine opt_multiobj( &
 	  endif
 
 	  allocate(alfaciniz_m(n))
+    
+    open(1, file='meta.out', status='replace')
 
 	  fob = 1.d0
 	  finiz = 0.d0
@@ -275,5 +277,7 @@ subroutine opt_multiobj( &
         deallocate(eps,constr,epsiniz)
         deallocate(ciq_m)
       endif
+
+    close(1)
 
 end subroutine opt_multiobj
