@@ -132,6 +132,7 @@ module cache
 end module cache
 
 module filtro
+	use problem_mod
 	integer, parameter :: ndim = 100000
 	!----------------------------------------------------------------
 	! il filtro e' un array la cui generica riga di dimensione n+q+n+2

@@ -1,5 +1,6 @@
 subroutine opt_multiobj()
 
+	use problem_mod
 	use eps_mod
 	use filtro
 	use cache
