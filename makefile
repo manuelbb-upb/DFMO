@@ -30,6 +30,7 @@ $(OBJS_SHARED): %.o: %.f90
 	$(FC) -c $(FFLAGS_SHARED) $< -o $@
 clean: 
 	$(RM) *.o
+	$(RM) *.so
 	$(RM) *.mod
 	$(RM) *~
 	$(RM) multiobj
