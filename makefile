@@ -1,24 +1,45 @@
 FC = gfortran
 RM = rm -f
 
-FFLAGS = -g
-FFLAGS = -O3
+FFLAGS = -O3 -g
+FFLAGS_SHARED = $(FFLAGS) -fPIC
 
 EXE = multiobj
-OBJS = modules_DFMO.o main.o DFMO.o subroutines_DFMO.o halton.o sobol.o qsortd.o problem.o
+EXE_SHARED = $(EXE).so
+OBJS =  main.o opt_multiobj.o DFMO.o subroutines_DFMO.o halton.o sobol.o qsortd.o
+OBJS_SHARED = opt_multiobj.fpic.o DFMO.fpic.o subroutines_DFMO.fpic.o halton.fpic.o sobol.fpic.o qsortd.fpic.o 
 
-all:  $(OBJS)
-	$(FC) -o $(EXE) $(OBJS)
+all: $(EXE)
 
-.SUFFIXES: .f90 .o
-	.f   .o
+$(EXE): modules_DFMO.o $(OBJS) problem.o
+	$(FC) -o $@ $^
 
-.f90.o: $* ; $(FC) $(FFLAGS) -c $*.f90
+modules_DFMO.o: problem.o modules_DFMO.f90
+	$(FC) -c $(FFLAGS) modules_DFMO.f90 -o modules_DFMO.o
 
-.f.o:   $* ; $(FC) $(FFLAGS) -c $*.f
+problem.o: problem_shim.f90
+	$(FC) -c $(FFLAGS) $< -o $@
+
+$(OBJS): %.o: %.f90
+	$(FC) -c $(FFLAGS) $< -o $@
+
+shared: $(EXE_SHARED)
+
+$(EXE_SHARED): modules_DFMO.fpic.o $(OBJS_SHARED) problem.fpic.o
+	$(FC) -shared -o $@ $^
+
+modules_DFMO.fpic.o: problem.fpic.o modules_DFMO.f90
+	$(FC) -c $(FFLAGS_SHARED) modules_DFMO.f90 -o modules_DFMO.fpic.o
+
+problem.fpic.o: problem_standalone.f03
+	$(FC) -c $(FFLAGS_SHARED) $< -o $@
+
+$(OBJS_SHARED): %.fpic.o: %.f90
+	$(FC) -c $(FFLAGS_SHARED) $< -o $@
 
 clean: 
 	$(RM) *.o
+	$(RM) *.so
 	$(RM) *.mod
 	$(RM) *~
 	$(RM) multiobj

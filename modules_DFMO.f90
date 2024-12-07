@@ -314,6 +314,7 @@ module filtro
 	end subroutine mergesets
 
 	subroutine print_filter(n,q)
+		use problem_mod
 		use vincoli
 		implicit none
 		integer n,q,i,j

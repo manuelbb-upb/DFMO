@@ -1,0 +1,14 @@
+local_user_data/
+# compilation results
+multiobj
+*.mod
+*.o
+*.so
+
+# optimization results
+*.out
+fort.1
+fort.2
+fort.3
+fort.33
+fort.55
