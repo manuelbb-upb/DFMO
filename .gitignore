@@ -5,6 +5,7 @@ multiobj
 *.mod
 *.o
 *.so
+*.dll
 
 # optimization results
 *.out
