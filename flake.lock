@@ -95,11 +95,11 @@
         "vscode-flake": "vscode-flake"
       },
       "locked": {
-        "lastModified": 1733329614,
-        "narHash": "sha256-G3O8IIQ6DXzlkPAwex3ZeltqP0GpWXYatOPRsYDGII0=",
+        "lastModified": 1733845882,
+        "narHash": "sha256-/pMI/gzJ+MPSmLPOPN1BIYlTsIJXmBbA4iLb9JSCwgc=",
         "owner": "manuelbb-upb",
         "repo": "nix-templates",
-        "rev": "ac632c1eb3444e2638f6da36d7eb6ad8b3767b8f",
+        "rev": "a9b493e291ffdf64ebd10418d251e474600c55ba",
         "type": "github"
       },
       "original": {
@@ -255,11 +255,11 @@
       "locked": {
         "lastModified": 1,
         "narHash": "sha256-o6LzsJU91ioUzvhl64N/XPM3sJfxFWNMwnYqyHyELCg=",
-        "path": "/nix/store/kw5di05sf8ygk95q1rns19hw9iv825r0-source/pkgs/vscode",
+        "path": "/nix/store/924hca67mr5zwvyxql7rimwlcb9zm8d9-source/pkgs/vscode",
         "type": "path"
       },
       "original": {
-        "path": "/nix/store/kw5di05sf8ygk95q1rns19hw9iv825r0-source/pkgs/vscode",
+        "path": "/nix/store/924hca67mr5zwvyxql7rimwlcb9zm8d9-source/pkgs/vscode",
         "type": "path"
       }
     }

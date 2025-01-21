@@ -28,6 +28,8 @@
     inherit (nix-vscode-extensions.extensions.${system}) vscode-marketplace;
     inherit (my-templates.packages.${system}) vscodium-with-default-extensions vscodium-local;
 
+    winPkgs = pkgs.pkgsCross.mingwW64.buildPackages;
+
     additional-extensions-nixpkgs = with pkgs.vscode-extensions; [
       # extensions from nixpkgs
       ms-vscode.cpptools
@@ -69,6 +71,8 @@
   {
     devShells.${system}.default = pkgs.mkShell {
       packages = (with pkgs; [
+        cmake
+        winPkgs.gfortran
         gfortran
         fortls
       ]) ++ ( with otherPkgs; [
