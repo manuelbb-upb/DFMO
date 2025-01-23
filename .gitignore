@@ -1,6 +1,7 @@
 local_user_data/
 # compilation results
 build/
+build_win/
 multiobj
 *.mod
 *.o
