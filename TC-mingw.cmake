@@ -1,0 +1,3 @@
+set(CMAKE_SYSTEM_NAME Windows CACHE INTERNAL "")
+
+set(CMAKE_Fortran_COMPILER "x86_64-w64-mingw32-gfortran" CACHE INTERNAL "")
