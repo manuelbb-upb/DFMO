@@ -7,6 +7,7 @@ multiobj
 *.o
 *.so
 *.dll
+*.swp
 
 # optimization results
 *.out
