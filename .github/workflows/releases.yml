@@ -9,6 +9,7 @@ jobs:
   build:
     uses: ./.github/workflows/build_libs.yml
   release:
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
