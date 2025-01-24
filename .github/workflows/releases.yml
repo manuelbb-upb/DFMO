@@ -21,7 +21,7 @@ jobs:
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         env:
           ARTIFACT_ID: ${{ needs.build.outputs.artifact-id }}
-          ARTIFACTS_FOLDER: ./build
+          ARTIFACTS_FOLDER: ./artifacts
         with:
           script: |
             const {default: artifactClient} = require('@actions/artifact')
@@ -29,4 +29,4 @@ jobs:
             await artifactClient.downloadArtifact(ARTIFACT_ID, { path: ARTIFACTS_FOLDER })
       - uses: ncipollo/release-action@v1
         with:
-          artifacts: "shared_libs.tar.gz"
+          artifacts: "artifacts/shared_libs.tar.gz"
