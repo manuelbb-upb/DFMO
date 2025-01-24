@@ -44,7 +44,7 @@ jobs:
     - name: Pack artifacts
       run: |
         mkdir shared_libs
-        mv build_linux/mulitobj.so shared_libs
+        mv build_linux/multiobj.so shared_libs
         mv build_win/multiobj.dll shared_libs
         tar -czvf shared_libs.tar.gz -C shared_libs
     - name: Upload artifacts
