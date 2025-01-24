@@ -36,4 +36,10 @@ jobs:
            cd build_win
            cmake --build . --target "shared"
 
-
+    - name: Archive artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: build-artifacts
+        path: |
+          build_linux/multiobj.so
+          build_win/multiobj.dll
