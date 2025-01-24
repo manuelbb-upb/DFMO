@@ -41,12 +41,16 @@ jobs:
            cd build_win
            cmake --build . --target "shared"
 
-    - name: Archive artifacts
+    - name: Pack artifacts
+      run: |
+        mkdir shared_libs
+        mv build_linux/mulitobj.so shared_libs
+        mv build_win/multiobj.dll shared_libs
+        tar -czvf shared_libs.tar.gz -C shared_libs
+    - name: Upload artifacts
       id: artifact-upload-step
       uses: actions/upload-artifact@v4
       with:
         name: build-artifacts
         retention-days: 1
-        path: |
-          build_linux/multiobj.so
-          build_win/multiobj.dll
+        path: shared_libs.tar.gz

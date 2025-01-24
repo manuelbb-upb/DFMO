@@ -29,4 +29,4 @@ jobs:
             await artifactClient.downloadArtifact(ARTIFACT_ID, { path: ARTIFACTS_FOLDER })
       - uses: ncipollo/release-action@v1
         with:
-          artifacts: "build/build_linux/multiobj.so,build/build_win/multiobj.dll"
+          artifacts: "shared_libs.tar.gz"
