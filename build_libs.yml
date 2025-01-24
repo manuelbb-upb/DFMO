@@ -1,0 +1,28 @@
+# This starter workflow is for a CMake project running on multiple platforms. There is a different starter workflow if you just want a single platform.
+# See: https://github.com/actions/starter-workflows/blob/main/ci/cmake-single-platform.yml
+name: CMake on multiple platforms
+
+on:
+  push:
+    branches: "*"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install tooling
+      run: |
+           sudo apt-get update
+           sudo DEBIAN_FRONTEND=noninteractive apt-get install -yq --no-install-recommends cmake gfortran gfortran-mingw-w64-x86-64
+    - uses: actions/checkout@v4
+    
+    - name: Configure Linux shared library
+      run: |
+        mkdir build_linux
+        cd build_linux
+        cmake ..
+
+    - name: Build Linux shared library
+      run: |
+           cd build_linux
+           cmake --build . --target "shared"
+           ls -l
