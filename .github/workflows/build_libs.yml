@@ -2,11 +2,16 @@ name: CMake shared librarys
 
 on:
   workflow_call:
+    outputs:
+      artifact-id:
+        value: ${{ jobs.build.outputs.artifact-id }}
   push:
     branches: [ "main" ]
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      artifact-id: ${{ steps.artifact-upload-step.outputs.artifact-id }}
     steps:
     - name: Install tooling
       run: |
@@ -37,9 +42,11 @@ jobs:
            cmake --build . --target "shared"
 
     - name: Archive artifacts
-      uses: actions/upload-artifact@v3
+      id: artifact-upload-step
+      uses: actions/upload-artifact@v4
       with:
         name: build-artifacts
+        retention-days: 1
         path: |
           build_linux/multiobj.so
           build_win/multiobj.dll
