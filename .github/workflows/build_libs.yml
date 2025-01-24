@@ -25,4 +25,16 @@ jobs:
       run: |
            cd build_linux
            cmake --build . --target "shared"
-           ls -l
+
+    - name: Configure Windows shared library
+      run: |
+        mkdir build_win
+        cd build_win
+        cmake -DCMAKE_TOOLCHAIN_FILE=../TC-mingw.cmake ..
+
+    - name: Build Windows shared library
+      run: |
+           cd build_win
+           cmake --build . --target "shared"
+
+
