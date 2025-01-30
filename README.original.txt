@@ -1,22 +1,6 @@
-# Derivative-Free Optimizer DFMO
-
-This fork of [DFMO](https://github.com/DerivativeFreeLibrary/DFMO) contains slight 
-modifications of the original Fortran code to enable compilation to a shared library.
-The shared library can be used to interactively call DFMO from other programming 
-languages.
-We use it in [DFMOWrapper.jl](https://github.com/manuelbb-upb/DFMOWrapper.jl) to
-solve problems in the Julia language.
-
-To manually compile the shared library, execute
-```
-make shared
-```
-The main routine is `opt_multiobj_`.
-
-To compile a static executable, refer to the original README below.
-
-## How to use the derivative-free optimizer DFMO 
-### (Original README)
+-----------------------------------------------------------
+ How to use the derivative-free optimizer DFMO 
+-----------------------------------------------------------
 
 1- Gunzip and untar the archive dfmo.tar.gz in a folder on your computer.
 
