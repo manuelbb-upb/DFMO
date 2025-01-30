@@ -45,13 +45,15 @@ These are the main changes compared to the original source:
     the rest of the code), there are setter functions. 
     For example, `set_setdim_ptr` is available in the shared library and takes a single argument, the pointer to a callback
     function, that is then assigned to the corresponding internal Fortran procedure pointer.
+* Automatic compilation using Github Workflows. Each push to `main` triggers a build of shared libraries, and everytime a `tag` 
+  is pushed (to any branch), a release is created and the build results are attached.
 
 ### Usage
 
 * To see how problems are defined and what the algorithm setting parameters mean, please refer to `README.original.txt`.
 * To use DFMO from within Julia, see [DFMOWrapper.jl](https://github.com/manuelbb-upb/DFMOWrapper.jl). 
 
-#### Compilation
+#### (Manual) Compilation
 Install `cmake` and `gfortran` to compile for Linux.
 To cross-compile to Windows, install the correct mingw version of `gfortran`.
 Depending on your OS, it might be called `x86_64-w64-mingw32-gfortran` or similar.
